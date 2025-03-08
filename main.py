@@ -8,9 +8,12 @@ app = Flask(__name__)
 app.secret_key = '1234567891011'
 
 # --- Configuration de Flask-Mail pour Mailjet ---
+# Pour SSL sur le port 465
 app.config['MAIL_SERVER'] = 'in-v3.mailjet.com'
-app.config['MAIL_PORT'] = 587
-app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_PORT'] = 465
+app.config['MAIL_USE_TLS'] = False
+app.config['MAIL_USE_SSL'] = True
+
 # Clé API (API Key) Mailjet
 app.config['MAIL_USERNAME'] = '60d3ee0cea1ab10cb22aa027cf08694b'
 # Clé API secrète (Secret Key) Mailjet
