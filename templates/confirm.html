@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Confirmation de l'inscription</title>
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+</head>
+<body class="bg-light">
+  <div class="container mt-5">
+    <h2>Confirmez votre inscription</h2>
+    <p>Email : {{ email }}</p>
+    <form method="POST">
+      <div class="form-group">
+        <label>Choisissez un mot de passe :</label>
+        <input type="password" name="password" class="form-control" required>
+      </div>
+      <button type="submit" class="btn btn-primary">Confirmer</button>
+    </form>
+  </div>
+</body>
+</html>
