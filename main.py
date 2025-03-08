@@ -1,28 +1,27 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_mail import Mail, Message
 from itsdangerous import URLSafeTimedSerializer
-# Pour une application en production, il est fortement recommandé de hacher les mots de passe,
-# par exemple en utilisant : from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = 'ta_cle_secrete'  # Remplace par une clé secrète sécurisée
 
-# --- Configuration de Flask-Mail ---
-# Ici, on utilise Gmail comme exemple. Si tu utilises Gmail, pense à créer un mot de passe d'application.
-app.config['MAIL_SERVER'] = 'smtp.gmail.com'
+# Remplace 'YOUR_SECRET_KEY' par une clé générée, par exemple avec secrets.token_hex(16)
+app.secret_key = '1234567891011'
+
+# --- Configuration de Flask-Mail pour Mailjet ---
+app.config['MAIL_SERVER'] = 'in-v3.mailjet.com'
 app.config['MAIL_PORT'] = 587
 app.config['MAIL_USE_TLS'] = True
-app.config['MAIL_USERNAME'] = 'ton_email@gmail.com'      # Remplace par ton email
-app.config['MAIL_PASSWORD'] = 'ton_mot_de_passe_app'       # Remplace par ton mot de passe d'application
+# Clé API (API Key) Mailjet
+app.config['MAIL_USERNAME'] = '60d3ee0cea1ab10cb22aa027cf08694b'
+# Clé API secrète (Secret Key) Mailjet
+app.config['MAIL_PASSWORD'] = '28a17b370194526bec3e500f69470a1'
 
 mail = Mail(app)
-
-# Serializer pour générer des tokens sécurisés (pour confirmation d'email et réinitialisation)
 s = URLSafeTimedSerializer(app.secret_key)
 
 # --- Base de données simplifiée ---
-# Pour simplifier, nous utilisons un dictionnaire pour stocker les utilisateurs.
-# En production, utilise une vraie base de données et n'oublie pas de hacher les mots de passe.
+# Ici, nous utilisons un dictionnaire pour stocker les utilisateurs.
+# En production, utilise une base de données et n'oublie pas de hacher les mots de passe.
 users = {}  # Format : { email: {'username': '...', 'password': '...'} }
 
 # --- Routes de l'application ---
@@ -46,7 +45,7 @@ def register():
         token = s.dumps(email, salt='email-confirm')
         confirm_url = url_for('confirm_email', token=token, _external=True)
         msg = Message('Confirmez votre adresse email',
-                      sender=app.config['MAIL_USERNAME'],
+                      sender=app.config['MAIL_USERNAME'],  # Expéditeur
                       recipients=[email])
         msg.body = (f'Pour terminer votre inscription, cliquez sur ce lien : {confirm_url}\n'
                     f'Ce lien expirera dans 1 heure.')
@@ -60,7 +59,7 @@ def register():
 def confirm_email(token):
     try:
         email = s.loads(token, salt='email-confirm', max_age=3600)
-    except Exception as e:
+    except Exception:
         return '<h1>Le lien de confirmation est invalide ou a expiré.</h1>'
     
     if request.method == 'POST':
@@ -118,7 +117,7 @@ def reset_password():
 def reset_with_token(token):
     try:
         email = s.loads(token, salt='password-reset', max_age=3600)
-    except Exception as e:
+    except Exception:
         return '<h1>Le lien de réinitialisation est invalide ou a expiré.</h1>'
     
     if request.method == 'POST':
@@ -134,4 +133,5 @@ def reset_with_token(token):
 
 if __name__ == '__main__':
     app.run(debug=True)
+
 
