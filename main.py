@@ -1,91 +1,137 @@
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify
-import io, csv
+from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask_mail import Mail, Message
+from itsdangerous import URLSafeTimedSerializer
+# Pour une application en production, il est fortement recommandé de hacher les mots de passe,
+# par exemple en utilisant : from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = "ta_cle_secrete"  # Clé pour sécuriser les sessions
+app.secret_key = 'ta_cle_secrete'  # Remplace par une clé secrète sécurisée
 
-# "Base de données" simplifiée pour les utilisateurs
-users = {
-    "user@example.com": {"password": "1234", "username": "Utilisateur"}
-}
+# --- Configuration de Flask-Mail ---
+# Ici, on utilise Gmail comme exemple. Si tu utilises Gmail, pense à créer un mot de passe d'application.
+app.config['MAIL_SERVER'] = 'smtp.gmail.com'
+app.config['MAIL_PORT'] = 587
+app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_USERNAME'] = 'ton_email@gmail.com'      # Remplace par ton email
+app.config['MAIL_PASSWORD'] = 'ton_mot_de_passe_app'       # Remplace par ton mot de passe d'application
 
-@app.route("/")
+mail = Mail(app)
+
+# Serializer pour générer des tokens sécurisés (pour confirmation d'email et réinitialisation)
+s = URLSafeTimedSerializer(app.secret_key)
+
+# --- Base de données simplifiée ---
+# Pour simplifier, nous utilisons un dictionnaire pour stocker les utilisateurs.
+# En production, utilise une vraie base de données et n'oublie pas de hacher les mots de passe.
+users = {}  # Format : { email: {'username': '...', 'password': '...'} }
+
+# --- Routes de l'application ---
+
+# Accueil : si l'utilisateur est connecté, il voit un message de bienvenue
+@app.route('/')
 def index():
-    if "user" in session:
-        return render_template("dashboard.html", username=session["user"])
-    return redirect(url_for("login"))
+    if 'user' in session:
+        return f"Bonjour, {session['user']} ! <br><a href='/logout'>Déconnexion</a>"
+    return redirect(url_for('login'))
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    message = ""
-    if request.method == "POST":
-        email = request.form["email"]
-        password = request.form["password"]
-        if email in users and users[email]["password"] == password:
-            session["user"] = users[email]["username"]
-            return redirect(url_for("index"))
-        else:
-            message = "Email ou mot de passe incorrect"
-    return render_template("login.html", message=message)
+# Inscription : l'utilisateur entre son email pour s'inscrire
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        email = request.form['email']
+        if email in users:
+            flash("Cet email est déjà enregistré. Veuillez vous connecter.")
+            return redirect(url_for('login'))
+        # Génération d'un token de confirmation
+        token = s.dumps(email, salt='email-confirm')
+        confirm_url = url_for('confirm_email', token=token, _external=True)
+        msg = Message('Confirmez votre adresse email',
+                      sender=app.config['MAIL_USERNAME'],
+                      recipients=[email])
+        msg.body = (f'Pour terminer votre inscription, cliquez sur ce lien : {confirm_url}\n'
+                    f'Ce lien expirera dans 1 heure.')
+        mail.send(msg)
+        flash('Un email de confirmation a été envoyé. Veuillez vérifier votre boîte mail.')
+        return redirect(url_for('login'))
+    return render_template('register.html')
 
-@app.route("/logout")
-def logout():
-    session.pop("user", None)
-    return redirect(url_for("login"))
-
-def calculer_cout_global(prix_achat, taux_depreciation, quantite):
-    cout_depreciation = prix_achat * taux_depreciation
-    cout_global = (prix_achat + cout_depreciation) * quantite
-    return cout_global
-
-@app.route("/calcul", methods=["POST"])
-def calcul():
-    prix_achat = float(request.form["prix_achat"])
-    taux_depreciation = float(request.form["taux_depreciation"])
-    quantite = int(request.form["quantite"])
+# Confirmation de l'inscription : l'utilisateur clique sur le lien reçu par email
+@app.route('/confirm/<token>', methods=['GET', 'POST'])
+def confirm_email(token):
+    try:
+        email = s.loads(token, salt='email-confirm', max_age=3600)
+    except Exception as e:
+        return '<h1>Le lien de confirmation est invalide ou a expiré.</h1>'
     
-    cout = calculer_cout_global(prix_achat, taux_depreciation, quantite)
-    return render_template("resultat.html", cout=cout)
+    if request.method == 'POST':
+        password = request.form['password']
+        username = email.split('@')[0]  # Exemple : le nom d'utilisateur est la partie avant le @
+        # En production, n'oublie pas de hacher le mot de passe
+        users[email] = {'username': username, 'password': password}
+        flash('Votre inscription est confirmée. Vous pouvez maintenant vous connecter.')
+        return redirect(url_for('login'))
+    return render_template('confirm.html', email=email)
 
-def verifier_stock(quantite, seuil):
-    if quantite < seuil:
-        return "Attention : il est temps de recommander !"
-    else:
-        return "Stock suffisant."
+# Connexion
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        email = request.form['email']
+        password = request.form['password']
+        user = users.get(email)
+        if user and user['password'] == password:
+            session['user'] = user['username']
+            flash('Connexion réussie.')
+            return redirect(url_for('index'))
+        flash('Email ou mot de passe incorrect.')
+    return render_template('login.html')
 
-@app.route("/alerte_stock", methods=["POST"])
-def alerte_stock():
-    quantite = int(request.form["quantite"])
-    seuil = int(request.form["seuil"])
-    message_alerte = verifier_stock(quantite, seuil)
-    return render_template("alerte.html", message=message_alerte)
+# Déconnexion
+@app.route('/logout')
+def logout():
+    session.pop('user', None)
+    flash('Vous avez été déconnecté.')
+    return redirect(url_for('login'))
 
-@app.route("/export_csv")
-def export_csv():
-    data = [
-        ["Produit", "Quantité", "Coût"],
-        ["Produit A", 10, 15.0],
-        ["Produit B", 5, 20.0]
-    ]
-    si = io.StringIO()
-    cw = csv.writer(si)
-    cw.writerows(data)
-    output = si.getvalue()
-    return output, 200, {
-        'Content-Type': 'text/csv',
-        'Content-Disposition': 'attachment; filename="export.csv"'
-    }
+# Demande de réinitialisation du mot de passe
+@app.route('/reset_password', methods=['GET', 'POST'])
+def reset_password():
+    if request.method == 'POST':
+        email = request.form['email']
+        if email not in users:
+            flash("Cet email n'est pas enregistré.")
+            return redirect(url_for('reset_password'))
+        token = s.dumps(email, salt='password-reset')
+        reset_url = url_for('reset_with_token', token=token, _external=True)
+        msg = Message('Réinitialisation de votre mot de passe',
+                      sender=app.config['MAIL_USERNAME'],
+                      recipients=[email])
+        msg.body = (f'Pour réinitialiser votre mot de passe, cliquez sur ce lien : {reset_url}\n'
+                    f'Ce lien expirera dans 1 heure.')
+        mail.send(msg)
+        flash('Un email de réinitialisation du mot de passe a été envoyé.')
+        return redirect(url_for('login'))
+    return render_template('reset_password.html')
 
-# Optionnel : API pour récupérer le coût en JSON
-@app.route("/api/cout", methods=["POST"])
-def api_cout():
-    data = request.get_json()
-    prix_achat = float(data["prix_achat"])
-    taux_depreciation = float(data["taux_depreciation"])
-    quantite = int(data["quantite"])
-    cout = calculer_cout_global(prix_achat, taux_depreciation, quantite)
-    return jsonify({"cout_global": cout})
+# Réinitialisation du mot de passe via le token
+@app.route('/reset/<token>', methods=['GET', 'POST'])
+def reset_with_token(token):
+    try:
+        email = s.loads(token, salt='password-reset', max_age=3600)
+    except Exception as e:
+        return '<h1>Le lien de réinitialisation est invalide ou a expiré.</h1>'
+    
+    if request.method == 'POST':
+        new_password = request.form['password']
+        if email in users:
+            users[email]['password'] = new_password  # N'oublie pas de hacher le mot de passe en production
+            flash('Votre mot de passe a été réinitialisé. Vous pouvez vous connecter.')
+            return redirect(url_for('login'))
+        else:
+            flash("Email non trouvé.")
+            return redirect(url_for('reset_password'))
+    return render_template('reset_with_token.html', email=email)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     app.run(debug=True)
 
